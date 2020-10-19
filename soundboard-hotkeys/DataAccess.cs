@@ -34,6 +34,15 @@ namespace soundboard_hotkeys
             }
         }
 
+        // save all command data from a singular command to the related row in the command table in the database
+        public static void SaveCommand(CommandModel command)
+        {
+            using (IDbConnection cnn = new SQLiteConnection(LoadConnectionString()))
+            {
+                cnn.Execute("Update command SET (hotkey, name, file_path) = (@Hotkey, @Name, @File_Path) WHERE id = @Id", command);
+            }
+        }
+
 
         // returns the connection string required to access database
         private static string LoadConnectionString()
