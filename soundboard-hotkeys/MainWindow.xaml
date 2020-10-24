@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:soundboard_hotkeys"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="950" MinHeight="250" MinWidth="900" MaxHeight="Infinity" MaxWidth="1000" Background="White" KeyboardNavigation.TabNavigation="None" KeyboardNavigation.ControlTabNavigation="None" KeyboardNavigation.DirectionalNavigation="Continue">
+        Title="MainWindow" Height="450" Width="950" MinHeight="250" MinWidth="900" MaxHeight="Infinity" MaxWidth="1000" Background="White" KeyboardNavigation.TabNavigation="None" KeyboardNavigation.ControlTabNavigation="None" KeyboardNavigation.DirectionalNavigation="Continue" Closing="Window_Closing">
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="100"/>

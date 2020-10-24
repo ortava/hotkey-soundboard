@@ -11,6 +11,8 @@ namespace soundboard_hotkeys
 {
     public class DataAccess
     {
+        /// CommandModel Data ///
+
         // returns a list of objects containing hotkey command data from the command table in ProfileDB
         public static List<CommandModel> LoadCommands()
         {
@@ -43,6 +45,41 @@ namespace soundboard_hotkeys
             }
         }
 
+        /// GlobalHotkey Data ///
+
+        // returns a list of objects containing global hotkey data from the global_hotkey table in ProfileDB
+        public static List<GlobalHotkey> LoadGlobalHotkeys()
+        {
+            using (IDbConnection cnn = new SQLiteConnection(LoadConnectionString()))
+            {
+                var output = cnn.Query<GlobalHotkey>("SELECT * FROM global_hotkey", new DynamicParameters());
+                return output.ToList();
+            }
+        }
+
+        // save all global hotkey data from a list to global_hotkey table in the database
+        public static void SaveGlobalHotkeys(List<GlobalHotkey> globalHotkeys)
+        {
+            using (IDbConnection cnn = new SQLiteConnection(LoadConnectionString()))
+            {
+                for (int i = 0; i < globalHotkeys.Count; i++)
+                {
+                    // update row where id is the same as globalHotkeys[i].Id
+                    cnn.Execute("UPDATE global_hotkey SET (virtual_key_code, modifiers) = (@Virtual_Key_Code, @Modifiers) WHERE id = @Id", globalHotkeys[i]);
+                }
+            }
+        }
+
+        // save all global hotkey data from a singular global hotkey to the related row in the global_hotkey table in the database
+        public static void SaveGlobalHotkey(GlobalHotkey globalHotkey)
+        {
+            using (IDbConnection cnn = new SQLiteConnection(LoadConnectionString()))
+            {
+                cnn.Execute("Update global_hotkey SET (virtual_key_code, modifiers) = (@Virtual_Key_Code, @Modifiers) WHERE id = @Id", globalHotkey);
+            }
+        }
+
+        //////////////////////////////////////////////////////////////////////////////////
 
         // returns the connection string required to access database
         private static string LoadConnectionString()

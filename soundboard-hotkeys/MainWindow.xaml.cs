@@ -16,7 +16,7 @@ using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
-using System.Windows.Threading; // maybe remove
+using System.Windows.Threading;
 
 namespace soundboard_hotkeys
 {
@@ -27,13 +27,22 @@ namespace soundboard_hotkeys
     public partial class MainWindow : Window
     {
         List<CommandModel> commands = new List<CommandModel>();
+        List<GlobalHotkey> globalHotkeys = new List<GlobalHotkey>();
         bool bHotkeyIsComplete = false;
+        bool bHotkeyInProgress = false;
+        object lastSender = null;           // keeps track of the last control sender
+
+        private MediaPlayer player = new MediaPlayer();
 
         public MainWindow()
         {
             InitializeComponent();
 
+            player.Volume = 0.40;
+            player.Play();
+
             LoadCommandControls();
+            LoadGlobalHotkeys();
         }
 
         // load Command data into commands list and insert data into respective controls
@@ -94,6 +103,82 @@ namespace soundboard_hotkeys
             }
         }
 
+        // load and register global hotkeys
+        private void LoadGlobalHotkeys()
+        {
+            globalHotkeys = DataAccess.LoadGlobalHotkeys();
+            for (int i = 0; i < globalHotkeys.Count; i++)
+            {
+                globalHotkeys[i].ConvertToKey(globalHotkeys[i].Virtual_Key_Code, globalHotkeys[i].Modifiers);
+                globalHotkeys[i].Action = OnHotkeyPlaySound;
+                globalHotkeys[i].Register();
+            }
+        }
+
+        // global hotkeys call this method to play their respective sound files
+        private void OnHotkeyPlaySound(GlobalHotkey hotkey)
+        {
+            // check if the user meant to create a new hotkey command and not execute an existing one
+            if (bHotkeyInProgress)
+            {
+                FinishHotkey(lastSender, hotkey.Key);
+                lastSender = null;
+                return;
+            }
+            
+            // play the sound file
+            player.Stop();         // stop any previous sounds still playing
+            if (!commands[hotkey.Id - 1].File_Path.Equals(""))
+            {
+                player.Open(new Uri(commands[hotkey.Id - 1].File_Path));
+                player.Play();
+            }
+        }
+
+        private void PauseSound(GlobalHotkey hotkey)
+        {
+            player.Pause();
+        }
+
+        // returns the Id of a given control
+        public int GetControlId(object sender)
+        {
+            int Id = 0;
+            if (sender is Control control)
+            {
+                string strId = control.Name.Substring(control.Name.Length - 2); // get the last 2 character in the control's name ("Hotkey10" gives strId='10', "Hotkey11" gives char='11', etc...)
+                                                                                // ...note that this only accounts for 2-digit numbers 
+                                                                                // ...(controls can have names like "Hotkey99", but not "Hotkey100", "Hotkey 101", and so on)
+
+                if (!strId.Any(ch => char.IsLetter(ch)))                        // if there are no letters in the string (this string can be converted to a number)
+                {
+                    Id = int.Parse(strId);                                      // convert the string to an int so we can correctly identify the related command
+                    return Id;                                                  // return Id
+                }
+                else                                                            // if this is a name with a single digit Id
+                strId = control.Name.Substring(control.Name.Length - 1);        // get the last character in the control's name ("Hotkey1" gives strId='1', "Hotkey2" gives strId='2', etc...)
+                Id = int.Parse(strId);                                          // convert the string to an int
+            }                                                                   // return Id
+
+            if (sender is TextBlock tblock)
+            {
+                string strId = tblock.Name.Substring(tblock.Name.Length - 2);
+
+                if (!strId.Any(ch => char.IsLetter(ch)))
+                {
+                    Id = int.Parse(strId);
+                    return Id;
+                }
+                else
+                strId = tblock.Name.Substring(tblock.Name.Length - 1);
+                Id = int.Parse(strId);
+            }
+
+            return Id;
+        }
+
+        ///// CONTROL METHODS BELOW /////
+
         // saves all commands in the profile to the database
         private void btnSaveProfile_Click(object sender, RoutedEventArgs e)
         {
@@ -152,8 +237,7 @@ namespace soundboard_hotkeys
         {
             TextBox tboxSender = (sender as TextBox);
 
-            char charId = tboxSender.Name[tboxSender.Name.Length - 1];  // get the last character in the control's name ("Hotkey1" gives char='1', "Hotkey2" gives char='2', etc...)
-            int Id = int.Parse(charId.ToString());                      // convert the character to an int so we can correctly identify the related command
+            int Id = GetControlId(sender);
 
             if (tboxSender.Text == "")                                  // if there is no hotkey in the textbox
                 tboxSender.Text = commands[Id - 1].Hotkey;              // insert the most recently saved valid hotkey into the textbox
@@ -165,19 +249,16 @@ namespace soundboard_hotkeys
         private void Hotkey_PreviewKeyUp(object sender, KeyEventArgs e)
         {
             TextBox tboxSender = (sender as TextBox);
+            bHotkeyInProgress = false;
+            int Id = GetControlId(tboxSender);
 
-            char charId = tboxSender.Name[tboxSender.Name.Length - 1];  // get the last character in the control's name ("Hotkey1" gives char='1', "Hotkey2" gives char='2', etc...) 
-            int Id = int.Parse(charId.ToString());                      // convert the character to an int so we can correctly identify the related command
-
-            /*
-              || tboxSender.Text == "SHIFT + " || tboxSender.Text "CTRL + "
-              || tboxSender.Text == "TAB + " || tboxSender.Text == "ALT + "
-            */
-
-            if (HasMaxPrefixes(sender, e) || tboxSender.Text == "")     // if the hotkey textbox is not complete
+            if (HasMaxModifiers(tboxSender, e) || HasOneModifier(tboxSender, e) || (tboxSender.Text == "")
+                || bHotkeyIsComplete == false)     // if the hotkey textbox is not complete
             {
-                tboxSender.Text = commands[Id - 1].Hotkey;              // insert the most recently saved valid hotkey
-                bHotkeyIsComplete = false;                              // hotkey is not complete
+                tboxSender.Text = commands[Id - 1].Hotkey;                  // insert the most recently saved valid hotkey
+                bHotkeyIsComplete = false;                                  // hotkey is not complete
+                e.Handled = true;                                           // the key has been processed
+                return;                                                     // exit the function
             }
         }
 
@@ -185,13 +266,14 @@ namespace soundboard_hotkeys
         private void Hotkey_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             TextBox tboxSender = (sender as TextBox);
+            Key key = (e.Key == Key.System ? e.SystemKey : e.Key);
 
             // if this key is an invalid for a hotkey
-            if (e.Key == Key.LWin || e.Key == Key.RWin          
-                || e.Key == Key.CapsLock || e.Key == Key.Escape 
-                || e.Key == Key.Back || e.Key == Key.Delete 
-                || e.Key == Key.Space || e.Key == Key.System)   // ALT gets recognized as System
-            {   
+            if (key == Key.LWin || key == Key.RWin
+                || key == Key.CapsLock || key == Key.Escape
+                || key == Key.Back || key == Key.Delete
+                || key == Key.Space || key == Key.System)
+            {
                 e.Handled = true;                               // the key has been processed
                 return;                                         // exit the function
             }
@@ -201,19 +283,20 @@ namespace soundboard_hotkeys
                 e.Handled = true;                               // the key has been processed
                 return;                                         // exit the function
             }
-         
+
             if (bHotkeyIsComplete == true)                      // if this hotkey is already complete (no need to add another key to the command)
             {
                 tboxSender.Text = "";                           // reset text in textbox to ""
                 bHotkeyIsComplete = false;                      // hotkey is no longer complete
+                return;
             }
-            
+
             // if the hotkey isn't full of modifier keys (CTRL, ALT, SHIFT, TAB, etc.) yet, we can add another
-            if (!HasMaxPrefixes(sender, e))
+            if (!HasMaxModifiers(tboxSender, e))
             {
-                if ((e.Key == Key.LeftCtrl) || (e.Key == Key.RightCtrl))    // if a CTRL key has been pressed
+                if ((key == Key.LeftCtrl) || (key == Key.RightCtrl))    // if a CTRL key has been pressed
                 {
-                    if (HasOnePrefix(sender, e))                            // if there's only one modifier in the hotkey
+                    if (HasOneModifier(tboxSender, e))                            // if there's only one modifier in the hotkey
                     {
                         if (tboxSender.Text == "CTRL + ")                   // and CTRL was already pressed
                         {
@@ -223,21 +306,26 @@ namespace soundboard_hotkeys
                         }
                         else                                                // if CTRL wasn't pressed yet
                         tboxSender.Text += "CTRL + ";                       // append "CTRL + " 
+                    bHotkeyInProgress = true;
+                    lastSender = tboxSender;
                         e.Handled = true;                                   // the key has been processed
                         return;                                             // exit the function
                     }
                     else                                                    // if no modifiers have been pressed yet
-                        tboxSender.Text = "CTRL + ";                        // replace the text in the textbox with "CTRL + "
-                        e.Handled = true;                                   // the key has been processed
-                        return;                                             // exit the function
+                    tboxSender.Text = "CTRL + ";                            // replace the text in the textbox with "CTRL + "
+                    bHotkeyInProgress = true;
+                    lastSender = tboxSender;
+                    e.Handled = true;                                       // the key has been processed
+                    return;                                                 // exit the function
+
                 }
 
                 /// THE ALT KEY IS BEING RECOGNIZED AS Key.System, THUS THE BELOW IF STATEMENT IS INOPERATIVE ///
-                if ((e.Key == Key.LeftAlt) || (e.Key == Key.RightAlt))      // if an ALT key has been pressed
+                if (key == Key.LeftAlt || key == Key.RightAlt)              // if an ALT key has been pressed
                 {
-                    if (HasOnePrefix(sender, e))                            // if there's only one modifier in the hotkey
+                    if (HasOneModifier(tboxSender, e))                        // if there's only one modifier in the hotkey
                     {
-                        if (tboxSender.Text == "ALT + ")                    // and ALT was already pressed
+                        if (tboxSender.Text == "ALT + " && key != Key.System)                    // and ALT was already pressed
                         {
                             tboxSender.Text = "";                           // reset the hotkey because we can't have the same modifer key twice
                             e.Handled = true;                               // the key has been processed
@@ -245,19 +333,22 @@ namespace soundboard_hotkeys
                         }
                         else                                                // if ALT wasn't pressed yet
                         tboxSender.Text += "ALT + ";                        // append "ALT + " 
+                        bHotkeyInProgress = true;
+                        lastSender = tboxSender;
                         e.Handled = true;                                   // the key has been processed
                         return;                                             // exit the function
                     }
                     else                                                    // if no modifiers have been pressed yet
-                        tboxSender.Text = "ALT + ";                         // replace the text in the textbox with "ALT + "
-                        e.Handled = true;                                   // the key has been processed
-                        return;                                             // exit the function
+                    tboxSender.Text = "ALT + ";                             // replace the text in the textbox with "ALT + "
+                    bHotkeyInProgress = true;
+                    lastSender = tboxSender;
+                    e.Handled = true;                                       // the key has been processed
+                    return;                                                 // exit the function
                 }
-                /////////////////////////////////////////////////////////////////////////////////////////////
 
-                if ((e.Key == Key.LeftShift) || (e.Key == Key.RightShift))  // if a SHIFT key has been pressed
+                if ((key == Key.LeftShift) || (key == Key.RightShift))      // if a SHIFT key has been pressed
                 {
-                    if (HasOnePrefix(sender, e))                            // if there's only one modifier in the hotkey
+                    if (HasOneModifier(tboxSender, e))                        // if there's only one modifier in the hotkey
                     {
                         if (tboxSender.Text == "SHIFT + ")                  // and SHIFT was already pressed
                         {
@@ -267,141 +358,197 @@ namespace soundboard_hotkeys
                         }
                         else                                                // if SHIFT wasn't pressed yet
                         tboxSender.Text += "SHIFT + ";                      // append "SHIFT + " 
+                        bHotkeyInProgress = true;
+                        lastSender = tboxSender;
                         e.Handled = true;                                   // the key has been processed
                         return;                                             // exit the function
                     }
                     else                                                    // if no modifiers have been pressed yet
-                        tboxSender.Text = "SHIFT + ";                       // replace the text in the textbox with "SHIFT + "
-                        e.Handled = true;                                   // the key has been processed
-                        return;                                             // exit the function
+                    tboxSender.Text = "SHIFT + ";                           // replace the text in the textbox with "SHIFT + "
+                    bHotkeyInProgress = true;
+                    lastSender = tboxSender;
+                    e.Handled = true;                                       // the key has been processed
+                    return;                                                 // exit the function
                 }
+        }
 
-                if (e.Key == Key.Tab)                                       // if a TAB key has been pressed
-                {
-                    if (HasOnePrefix(sender, e))                            // if there's only one modifier in the hotkey
-                    {
-                        if (tboxSender.Text == "TAB + ")                    // and TAB was already pressed
-                        {
-                            tboxSender.Text = "";                           // reset the hotkey because we can't have the same modifer key twice
-                            e.Handled = true;                               // the key has been processed
-                            return;                                         // exit the function
-                        }
-                        else                                                // if TAB wasn't pressed yet
-                        tboxSender.Text += "TAB + ";                        // append "TAB + " 
-                        e.Handled = true;                                   // the key has been processed
-                        return;                                             // exit the function
-                    }
-                    else                                                    // if no modifiers have been pressed yet
-                        tboxSender.Text = "TAB + ";                         // replace the text in the textbox with "TAB + "
-                        e.Handled = true;                                   // the key has been processed
-                        return;                                             // exit the function
-                }
-            }
-
-            string lastKey;                                                 // string to hold the text for the last key in the hotkey
-            if (tboxSender.Text == "")                                      // if the text is blank (this handles non-modifer keys being pressed first)
+        if (key != Key.LeftCtrl && key != Key.RightCtrl                     // if a non-modifer key was pressed
+                && key != Key.LeftShift && key != Key.RightShift            // ...
+                && key != Key.LeftAlt && key != Key.RightAlt                // ...
+                && key != Key.Tab && key != Key.System                      // ...
+                && bHotkeyInProgress)                                       // ...
             {
-                e.Handled = true;                                           // the key has been processed
-                return;                                                     // exit the function
-            }
-            else if (e.Key != Key.LeftCtrl && e.Key != Key.RightCtrl        // if a non-modifer key was pressed
-                && e.Key != Key.LeftShift && e.Key != Key.RightShift        // ...
-                && e.Key != Key.LeftAlt && e.Key != Key.RightAlt            // ...
-                && e.Key != Key.Tab && e.Key != Key.System                  // ...
-                && (HasOnePrefix(sender, e) || HasMaxPrefixes(sender, e)))  // and the hotkey already has at least one modifier
-            {
-                switch (e.Key)                                              // begin checking which key was was pressed
-                {                                                           // assign the appropriate character to the given key
-                    case Key.D0:
-                        lastKey = "0";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.D1:
-                        lastKey = "1";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.D2:
-                        lastKey = "2";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.D3:
-                        lastKey = "3";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.D4:
-                        lastKey = "4";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.D5:
-                        lastKey = "5";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.D6:
-                        lastKey = "6";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.D7:
-                        lastKey = "7";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.D8:
-                        lastKey = "8";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.D9:
-                        lastKey = "9";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.OemMinus:
-                        lastKey = "-";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.OemPlus:
-                        lastKey = "=";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.OemComma:
-                        lastKey = ",";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.OemPeriod:
-                        lastKey = ".";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.OemQuestion:
-                        lastKey = "/";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.Oem1:
-                        lastKey = ";";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.OemQuotes:
-                        lastKey = "'";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.OemOpenBrackets:
-                        lastKey = "[";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.Oem6:
-                        lastKey = "]";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    case Key.Oem5:
-                        lastKey = "'\'";
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                    default:                                // default is a non-special key, like the alphabetical keys
-                        lastKey = e.Key.ToString();
-                        FinishHotkey(sender, e, lastKey);
-                        break;
-                }
+                FinishHotkey(tboxSender, key);
+                e.Handled = true;
             }
         }
 
+        // completes a hotkey command
+        private void FinishHotkey(object sender, Key key)
+        {
+            TextBox tboxSender = (sender as TextBox);
+
+            switch (key)                                // begin checking which key was was pressed
+            {                                           // assign the appropriate character to the given key
+                case Key.D0:
+                    tboxSender.Text += "0";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.D1:
+                    tboxSender.Text += "1";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.D2:
+                    tboxSender.Text += "2";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.D3:
+                    tboxSender.Text += "3";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.D4:
+                    tboxSender.Text += "4";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.D5:
+                    tboxSender.Text += "5";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.D6:
+                    tboxSender.Text += "6";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.D7:
+                    tboxSender.Text += "7";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.D8:
+                    tboxSender.Text += "8";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.D9:
+                    tboxSender.Text += "9";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.OemMinus:
+                    tboxSender.Text += "-";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.OemPlus:
+                    tboxSender.Text += "=";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.OemComma:
+                    tboxSender.Text += ",";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.OemPeriod:
+                    tboxSender.Text += ".";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.OemQuestion:
+                    tboxSender.Text += "/";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.Oem1:
+                    tboxSender.Text += ";";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.OemQuotes:
+                    tboxSender.Text += "'";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.OemOpenBrackets:
+                    tboxSender.Text += "[";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.Oem6:
+                    tboxSender.Text += "]";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                case Key.Oem5:
+                    tboxSender.Text += "'\'";
+                    StoreHotkey(tboxSender, key);
+                    break;
+                default:                                // default is a non-special key, like the alphabetical keys
+                    tboxSender.Text += key.ToString();
+                    StoreHotkey(tboxSender, key);
+                    break;
+            }
+
+            // hotkey is complete
+            bHotkeyInProgress = false;
+            bHotkeyIsComplete = true;
+        }
+
+        // stores and registers a completed hotkey
+        private void StoreHotkey(object sender, Key e) //, string lastKey)
+        {
+            KeyModifier modifiers = (KeyModifier)Keyboard.Modifiers;
+            TextBox tboxSender = (sender as TextBox);
+            int Id = GetControlId(tboxSender);
+            string temp = tboxSender.Text;
+
+            for (int i = 0; i < commands.Count; i++)
+            {
+                if (temp == commands[i].Hotkey && Id != commands[i].Id)     // if this command already exists
+                {                                                           // ... swap them
+                    // store data in temporary variables
+                    string oldKeyStr = commands[Id - 1].Hotkey;
+                    string oldName = commands[Id - 1].Name;
+                    Key oldKey = globalHotkeys[Id - 1].Key;
+                    KeyModifier oldKeyModifiers = globalHotkeys[Id - 1].Key_Modifiers;
+
+                    // swap the data from this command and the old command
+                    commands[Id - 1].Hotkey = commands[i].Hotkey;
+                    commands[Id - 1].Name = commands[i].Name;
+                    globalHotkeys[Id - 1].Key = e;
+                    globalHotkeys[Id - 1].Key_Modifiers = modifiers;
+                    globalHotkeys[Id - 1].Action = OnHotkeyPlaySound;
+
+                    commands[i].Hotkey = oldKeyStr;
+                    commands[i].Name = oldName;
+                    globalHotkeys[i].Key = oldKey;
+                    globalHotkeys[i].Key_Modifiers = oldKeyModifiers;
+                    globalHotkeys[i].Action = OnHotkeyPlaySound;
+
+                    // unregister the two old global hotkeys, then register with the newly stored data
+                    globalHotkeys[i].Unregister();
+                    globalHotkeys[Id - 1].Unregister();
+                    globalHotkeys[i].Register();
+                    globalHotkeys[Id - 1].Register();
+
+                    // save all changes to the database
+                    DataAccess.SaveGlobalHotkey(globalHotkeys[i]);
+                    DataAccess.SaveCommand(commands[i]);
+                    DataAccess.SaveGlobalHotkey(globalHotkeys[Id - 1]);
+                    DataAccess.SaveCommand(commands[Id - 1]);
+
+                    // find the old command's hotkey textbox and display the new hotkey
+                    foreach (TextBox tBox in CommandGrid.Children.OfType<TextBox>().Where(tbox => tbox.Name == "Hotkey" + commands[i].Id.ToString()))
+                    {
+                        tBox.Text = commands[i].Hotkey;
+                    }
+
+                    return;                                         // return
+                }
+            }
+
+            // store data
+            globalHotkeys[Id - 1].Key = e;
+            globalHotkeys[Id - 1].Key_Modifiers = modifiers;
+            globalHotkeys[Id - 1].Action = OnHotkeyPlaySound;
+            commands[Id - 1].Hotkey = tboxSender.Text;
+
+            globalHotkeys[Id - 1].Unregister();                     // unregister old hotkey
+            globalHotkeys[Id - 1].Register();                       // register the newly stored hotkey
+
+            DataAccess.SaveGlobalHotkey(globalHotkeys[Id - 1]);     // save global hotkey to the database
+            DataAccess.SaveCommand(commands[Id - 1]);               // save command info to the database
+        }
+
         // returns true if the hotkey already has the maximum number of valid modifier keys
-        private bool HasMaxPrefixes(object sender, KeyEventArgs e)
+        private bool HasMaxModifiers(object sender, KeyEventArgs e)
         {
             TextBox tboxSender = (sender as TextBox);
 
@@ -409,16 +556,10 @@ namespace soundboard_hotkeys
             {
                 "CTRL + SHIFT + ",
                 "CTRL + ALT + ",
-                "CTRL + TAB + ",
                 "SHIFT + CTRL + ",
                 "SHIFT + ALT + ",
-                "SHIFT + TAB + ",
                 "ALT + CTRL + ",
                 "ALT + SHIFT + ",
-                "ALT + TAB + ",
-                "TAB + CTRL + ",
-                "TAB + SHIFT + ",
-                "TAB + ALT + ",
             });
             
             for (int i = 0; i < prefixes.Count; i++)
@@ -431,7 +572,7 @@ namespace soundboard_hotkeys
         }
 
         // returns true if the hotkey has only one valid modifier key
-        private bool HasOnePrefix(object sender, KeyEventArgs e)
+        private bool HasOneModifier(object sender, KeyEventArgs e)
         {
             TextBox tboxSender = (sender as TextBox);
 
@@ -440,49 +581,11 @@ namespace soundboard_hotkeys
                 "CTRL + ",
                 "SHIFT + ",
                 "ALT + ",
-                "TAB + ",
             });
 
             for (int i = 0; i < initialPrefixes.Count; i++)
             {
                 if (tboxSender.Text == initialPrefixes[i])
-                    return true;
-            }
-
-            return false;
-        }
-
-        // appends the last key on the hotkey
-        private void FinishHotkey(object sender, KeyEventArgs e, string lastKey)
-        {
-            TextBox tboxSender = (sender as TextBox);
-
-            string temp = tboxSender.Text += lastKey;
-            char charId = tboxSender.Name[tboxSender.Name.Length - 1];
-            int Id = int.Parse(charId.ToString());
-
-            if (HotkeyExists(temp))
-            {
-                tboxSender.Text = commands[Id - 1].Hotkey;
-                bHotkeyIsComplete = false;
-                e.Handled = true;
-                return;
-            }
-            else
-                tboxSender.Text = temp;
-                bHotkeyIsComplete = true;
-                e.Handled = true;
-            
-                commands[Id - 1].Hotkey = tboxSender.Text;
-                DataAccess.SaveCommand(commands[Id - 1]);
-        }
-
-        // checks if the hotkey already exists (can't have two of the same hotkey)
-        private bool HotkeyExists(string hotkey)
-        {
-            for (int i = 0; i < commands.Count; i++)
-            {
-                if (hotkey == commands[i].Hotkey)
                     return true;
             }
 
@@ -497,8 +600,7 @@ namespace soundboard_hotkeys
             // save content of Name textbox upon Enter key press
             if (e.Key == Key.Enter)
             {
-                char charId = tboxSender.Name[tboxSender.Name.Length - 1];
-                int Id = int.Parse(charId.ToString());
+                int Id = GetControlId(tboxSender);
                 commands[Id - 1].Name = tboxSender.Text;
                 DataAccess.SaveCommand(commands[Id - 1]);
             }
@@ -534,16 +636,15 @@ namespace soundboard_hotkeys
         private void File_PreviewDrop(object sender, DragEventArgs e)
         {
             object filename = e.Data.GetData(DataFormats.FileDrop);                         // get the filename
-            if (sender is TextBlock tblock)
+            if (sender is TextBlock tblockSender)
             {
-                tblock.Text = string.Format("{0}", ((string[])filename)[0]);                // insert filename into textblock
+                tblockSender.Text = string.Format("{0}", ((string[])filename)[0]);                // insert filename into textblock
 
                 // get id of command
-                char charId = tblock.Name[tblock.Name.Length - 1];
-                int Id = int.Parse(charId.ToString());
-                commands[Id - 1].File_Path = tblock.Text;                                   // put filename into command list
+                int Id = GetControlId(tblockSender);
+                commands[Id - 1].File_Path = tblockSender.Text;                                   // put filename into command list
 
-                string shortFileName = Path.GetFileName(tblock.Text);                       // get shortened filename
+                string shortFileName = Path.GetFileName(tblockSender.Text);                       // get shortened filename
                 if (shortFileName.Length > 24)                                              // if the shortened filename is too many characters
                     commands[Id - 1].Name = shortFileName.Remove(24, (shortFileName.Length - 24));  // cut off the rest of the excess characters and store in command list
                 else 
@@ -577,14 +678,13 @@ namespace soundboard_hotkeys
                 string filename = dialog.FileName;
                 tblockSender.Text = filename;
 
-                char charId = tblockSender.Name[tblockSender.Name.Length - 1];
-                int Id = int.Parse(charId.ToString());
+                int Id = GetControlId(tblockSender);
                 commands[Id - 1].File_Path = tblockSender.Text;                              // store filename in command list
 
                 string shortFileName = dialog.SafeFileName;                                  // get shortened filename
 
                 if (shortFileName.Length > 24)                                               // if shortened filename is too long
-                    commands[Id - 1].Name = shortFileName.Remove(24, shortFileName.Length);  // cut off excess characters and store in command list
+                    commands[Id - 1].Name = shortFileName.Remove(24);                       // cut off excess characters and store in command list
                 else
                     commands[Id - 1].Name = shortFileName;                                   // otherwise, store whole name in command list
 
@@ -611,23 +711,22 @@ namespace soundboard_hotkeys
         {
             Button btnSender = (sender as Button);
 
-            char charId = btnSender.Name[btnSender.Name.Length - 1];
-            int Id = int.Parse(charId.ToString());
-            int commandIndex = Id - 1;            
+            int Id = GetControlId(btnSender);
+            int controlIndex = Id - 1;            
 
             foreach (TextBox txtboxControl in CommandGrid.Children.OfType<TextBox>().Where(tbox => tbox.Name == "Name" + Id.ToString()))
             {
                 txtboxControl.Text = "";
-                commands[commandIndex].Name = txtboxControl.Text;
+                commands[controlIndex].Name = txtboxControl.Text;
             }
 
             foreach (TextBlock txtblockControl in CommandGrid.Children.OfType<TextBlock>().Where(tblock => tblock.Name == "File" + Id.ToString()))
             {
                 txtblockControl.Text = "";
-                commands[commandIndex].File_Path = txtblockControl.Text;
+                commands[controlIndex].File_Path = txtblockControl.Text;
             }
 
-            DataAccess.SaveCommand(commands[commandIndex]);
+            DataAccess.SaveCommand(commands[controlIndex]);
         }
 
         // defined behavior upon clicking the Clear All button (clears all Name textboxes and File textblock on the CommandGrid, then saves the cleared commands)
@@ -656,6 +755,17 @@ namespace soundboard_hotkeys
             }
 
             DataAccess.SaveCommands(commands);
+        }
+
+        // dispose of global hotkeys upon closing window
+        private void Window_Closing(object sender, CancelEventArgs e)
+        {
+            for (int i = 0; i < globalHotkeys.Count; i++)
+            {
+                globalHotkeys[i].Dispose();
+            }
+
+            player.Close();
         }
     }
 

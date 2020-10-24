@@ -10,10 +10,6 @@ namespace soundboard_hotkeys
         public string Hotkey { get; set; }
         public string File_Path { get; set; }
         public string Name { get; set; }
-
-
-
-
         
     }
 }
