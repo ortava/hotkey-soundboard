@@ -9,7 +9,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 
-namespace soundboard_hotkeys
+namespace hotkey_soundboard
 {
     public class GlobalHotkey : IDisposable
     {
@@ -43,8 +43,11 @@ namespace soundboard_hotkeys
         }
 
         // registers a unique global hotkey to perform the stored action
-        public bool Register()
+        public void Register(bool IsInactive)
         {
+            if (IsInactive)
+                return;
+
             Virtual_Key_Code = KeyInterop.VirtualKeyFromKey(Key);
             Modifiers = (int)Key_Modifiers;
             KeyId = Virtual_Key_Code + (Modifiers * 0x10000);
@@ -58,8 +61,7 @@ namespace soundboard_hotkeys
 
             _dictHotKeyToCalBackProc.Add(KeyId, this);
 
-            Debug.Print(result.ToString() + ", " + KeyId + ", " + Virtual_Key_Code);
-            return result;
+            return;
         }
 
         // unregisters the global hotkey

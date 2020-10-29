@@ -7,7 +7,7 @@ using System.Data.SQLite;
 using System.Linq;
 using System.Text;
 
-namespace soundboard_hotkeys
+namespace hotkey_soundboard
 {
     public class DataAccess
     {

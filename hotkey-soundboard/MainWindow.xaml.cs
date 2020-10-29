@@ -19,7 +19,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Threading;
 
-namespace soundboard_hotkeys
+namespace hotkey_soundboard
 {
     /// <summary>
     /// Interaction logic for MainWindow.xaml
@@ -36,6 +36,7 @@ namespace soundboard_hotkeys
         int profileIndex = 0;
         bool bHotkeyIsComplete = false;
         bool bHotkeyInProgress = false;
+        bool bIsInactive = false;
         object lastSender = null;           // keeps track of the last control sender
 
         private MediaPlayer player = new MediaPlayer();
@@ -77,7 +78,7 @@ namespace soundboard_hotkeys
             {
                 globalHotkeys[i].ConvertToKey(globalHotkeys[i].Virtual_Key_Code, globalHotkeys[i].Modifiers);
                 globalHotkeys[i].Action = OnHotkeyPlaySound;
-                globalHotkeys[i].Register();
+                globalHotkeys[i].Register(bIsInactive);
             }
         }
 
@@ -151,6 +152,7 @@ namespace soundboard_hotkeys
             }
 
             int commandIndex = (hotkey.Id - 1) - (numberOfHotkeys * (profiles[profileIndex].Id - 1));
+
             // play the sound file 
             player.Stop();         // stop any previous sounds still playing
             if (!string.IsNullOrEmpty(commands[commandIndex].File_Path))
@@ -158,11 +160,6 @@ namespace soundboard_hotkeys
                 player.Open(new Uri(commands[commandIndex].File_Path));
                 player.Play();
             }
-        }
-
-        private void PauseSound(GlobalHotkey hotkey)
-        {
-            player.Pause();
         }
 
         // returns the Id of a given control
@@ -536,8 +533,8 @@ namespace soundboard_hotkeys
                     // unregister the two old global hotkeys, then register with the newly stored data
                     globalHotkeys[i].Unregister();
                     globalHotkeys[Id - 1].Unregister();
-                    globalHotkeys[i].Register();
-                    globalHotkeys[Id - 1].Register();
+                    globalHotkeys[i].Register(bIsInactive);
+                    globalHotkeys[Id - 1].Register(bIsInactive);
 
                     // save all changes to the database
                     DataAccess.SaveGlobalHotkey(globalHotkeys[i]);
@@ -562,7 +559,7 @@ namespace soundboard_hotkeys
             commands[Id - 1].Hotkey = tboxSender.Text;
 
             globalHotkeys[Id - 1].Unregister();                     // unregister old hotkey
-            globalHotkeys[Id - 1].Register();                       // register the newly stored hotkey
+            globalHotkeys[Id - 1].Register(bIsInactive);                       // register the newly stored hotkey
 
             DataAccess.SaveGlobalHotkey(globalHotkeys[Id - 1]);     // save global hotkey to the database
             DataAccess.SaveCommand(commands[Id - 1]);               // save command info to the database
@@ -837,6 +834,7 @@ namespace soundboard_hotkeys
 
             if (profileIndex == listboxProfile.SelectedIndex)                   // if the list being deleted is the currently active profile
             {
+                player.Stop();                                                  // stop the currently playing audio
                 profileIndex = listboxProfile.SelectedIndex - 1;                // set a new profile index
 
                 for (int i = 0; i < globalHotkeys.Count; i++)          // dispose of old global hotkeys
@@ -881,6 +879,35 @@ namespace soundboard_hotkeys
                 listboxItem.Content = dialog.ResponseText;
                 profiles[listboxProfile.SelectedIndex].Name = listboxItem.Content.ToString();
                 DataAccess.SaveProfile(profiles[listboxProfile.SelectedIndex]);
+            }
+        }
+
+
+        // defines behavior upon checking the "Deactivate Hotkeys" checkbox
+        // deactivates all currently registered global hotkeys and prevents new hotkeys from being registered
+        private void checkInactive_Checked(object sender, RoutedEventArgs e)
+        {
+            bIsInactive = true;
+
+            // dispose of all active globalhotkeys
+            for (int i = 0; i < globalHotkeys.Count; i++)
+            {
+                globalHotkeys[i].Unregister();
+            }
+
+            player.Close();                     // ensure that the media player is closed
+        }
+
+        // defines behavior upon unchecking the "Deactivate Hotkeys" checkbox
+        // activates all currently selected hotkeys and allows new registrations as normal
+        private void checkInactive_Unchecked(object sender, RoutedEventArgs e)
+        {
+            bIsInactive = false;
+
+            // activate all globalhotkeys
+            for (int i = 0; i < globalHotkeys.Count; i++)
+            {
+                globalHotkeys[i].Register(bIsInactive);
             }
         }
 

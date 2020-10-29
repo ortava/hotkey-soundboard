@@ -6,7 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 
-namespace soundboard_hotkeys
+namespace hotkey_soundboard
 {
     /// <summary>
     /// Interaction logic for App.xaml

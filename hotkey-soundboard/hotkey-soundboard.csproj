@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-    <RootNamespace>soundboard_hotkeys</RootNamespace>
+    <RootNamespace>hotkey_soundboard</RootNamespace>
     <UseWPF>true</UseWPF>
   </PropertyGroup>
 
