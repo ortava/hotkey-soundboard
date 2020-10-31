@@ -1,56 +1,58 @@
-﻿using Microsoft.Win32;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Effects;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
 using System.Windows.Threading;
 
 namespace hotkey_soundboard
 {
     /// <summary>
     /// Interaction logic for MainWindow.xaml
+    /// 
+    /// The main functionality of the program is defined here:
+    /// 1.) Methods for individual event functionality on the MainWindow controls.
+    /// 2.) Supplementary methods that help deal with the user's profile data by
+    ///     loading commands and registering global hotkeys.
+    /// 
+    /// Note: This is a long file. During the course of this project, I've become
+    ///       more accustomed to the design pattern of MVC (Model-View-Controller)
+    ///       and  MVVM (Model-View-ViewModel). Neither of these patterns were used
+    ///       to great extent in this project, but if they had been used, this file
+    ///       would be much smaller, easier to maintain, and easier to reuse. To move
+    ///       this project into an MVVM format would be a great way to improve it.
     /// </summary> 
 
     public partial class MainWindow : Window
     {
-        const int numberOfHotkeys = 36;
+        const int numberOfHotkeys = 36;     // the number of hotkeys a profile can have
 
-        List<ProfileModel> profiles = new List<ProfileModel>();
-        List<CommandModel> commands = new List<CommandModel>();
-        List<GlobalHotkey> globalHotkeys = new List<GlobalHotkey>();
+        List<ProfileModel> profiles = new List<ProfileModel>();         // list of profiles store in the database
+        List<CommandModel> commands = new List<CommandModel>();         // list of active commands (linked to a specific profile by ID)
+        List<GlobalHotkey> globalHotkeys = new List<GlobalHotkey>();    // list of active global hotkey (linked to a specific profile by ID)
 
-        int profileIndex = 0;
-        bool bHotkeyIsComplete = false;
-        bool bHotkeyInProgress = false;
-        bool bIsInactive = false;
+        int profileIndex = 0;               // keeps track of the active profile (helpful to keep track of the corresponding command/global_hotkey ID)
+        bool bHotkeyInputDisabled = false;  // keeps track of when the a hotkey textbox can receive further input
+        bool bHotkeyInProgress = false;     // keeps track of when the user is in the process of making a hotkey
+        bool bIsInactive = false;           // keeps track of whether the "Deactivate Hotkeys" checkbox is checked or not. If bIsInactive = true, global hotkeys will not register.
         object lastSender = null;           // keeps track of the last control sender
 
-        private MediaPlayer player = new MediaPlayer();
+        private MediaPlayer player = new MediaPlayer(); // the mediaplayer used to play audio when the user executes a hotkey command
 
         public MainWindow()
         {
             InitializeComponent();
 
             player.Volume = 0.40;
-            player.Play();
+            player.Play();                  // play nothing on startup so the user can edit their volume control with needing to play audio
 
-            LoadProfiles();
-            LoadGlobalHotkeys(0);
-            LoadCommandControls(0);
+            LoadProfiles();                 // load all stored profiles into the profiles list and create an item in the listbox for each
+            LoadGlobalHotkeys(0);           // load the initial profile's related global hotkeys and register them
+            LoadCommandControls(0);         // load the ininital profile's related command string data and insert into controls on the window
         }
 
         // load all profiles from the database into the profiles list and adds appropriate items to the profile listbox
@@ -67,7 +69,6 @@ namespace hotkey_soundboard
 
                 listboxProfile.Items.Add(item);
             }
-            
         }
 
         // load and register global hotkeys
@@ -178,7 +179,7 @@ namespace hotkey_soundboard
                     return Id;                                                  // return Id
                 }
                 else                                                            // if this is a name with a single digit Id
-                strId = control.Name.Substring(control.Name.Length - 1);        // get the last character in the control's name ("Hotkey1" gives strId='1', "Hotkey2" gives strId='2', etc...)
+                    strId = control.Name.Substring(control.Name.Length - 1);        // get the last character in the control's name ("Hotkey1" gives strId='1', "Hotkey2" gives strId='2', etc...)
                 Id = int.Parse(strId);                                          // convert the string to an int
             }                                                                   // return Id
 
@@ -192,15 +193,21 @@ namespace hotkey_soundboard
                     return Id;
                 }
                 else
-                strId = tblock.Name.Substring(tblock.Name.Length - 1);
+                    strId = tblock.Name.Substring(tblock.Name.Length - 1);
                 Id = int.Parse(strId);
             }
 
             return Id;
         }
 
-        ///// CONTROL METHODS BELOW /////
-        
+        /// ####################################################################
+        /// CONTROL METHODS BELOW
+        /// ####################################################################
+
+/// ###############################
+/// TEXTBOX METHODS
+/// ###############################
+
         // defines behavior when a hotkey textbox comes into focus of a Hotkey textbox
         // selects all text in the hotkey textbox
         private void Hotkey_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
@@ -222,10 +229,11 @@ namespace hotkey_soundboard
 
             int Id = GetControlId(sender);
 
-            if (tboxSender.Text == "")                                  // if there is no hotkey in the textbox
+            if (tboxSender.Text == "")     // if there is no valid hotkey in the textbox
                 tboxSender.Text = commands[Id - 1].Hotkey;              // insert the most recently saved valid hotkey into the textbox
 
-            bHotkeyIsComplete = false;                                  // the hotkey textbox has lost focus, so the user may have moved on to another hotkey
+            bHotkeyInputDisabled = false;  // the hotkey textbox has lost focus, so the user may have moved on to another hotkey
+            bHotkeyInProgress = false;
         }
 
         // defines behavior when the user's key is released on a Hotkey textbox
@@ -236,14 +244,18 @@ namespace hotkey_soundboard
             bHotkeyInProgress = false;
             int Id = GetControlId(tboxSender);
 
-            if (HasMaxModifiers(tboxSender, e) || HasOneModifier(tboxSender, e) || (tboxSender.Text == "")
-                || bHotkeyIsComplete == false)     // if the hotkey textbox is not complete
+
+            if (Keyboard.Modifiers.Equals(ModifierKeys.None))   // if there are no more modifier keys being held down
             {
-                tboxSender.Text = commands[Id - 1].Hotkey;                  // insert the most recently saved valid hotkey
-                bHotkeyIsComplete = false;                                  // hotkey is not complete
-                e.Handled = true;                                           // the key has been processed
-                return;                                                     // exit the function
+                tboxSender.Text = commands[Id - 1].Hotkey;      // insert the most recently saved valid hotkey
+                bHotkeyInputDisabled = false;                   // the hotkey textbox is ready to take more input
+                e.Handled = true;                               
+                return;
             }
+            else                                                // if modifier keys are still being pressed
+            tboxSender.Text = commands[Id - 1].Hotkey;          
+            bHotkeyInputDisabled = true;                        // the hotkey textbox is not ready to take more input
+            e.Handled = true;
         }
 
         // defines behavior when the user's key is pressed down on a Hotkey textbox
@@ -253,13 +265,14 @@ namespace hotkey_soundboard
             TextBox tboxSender = (sender as TextBox);
             Key key = (e.Key == Key.System ? e.SystemKey : e.Key);
 
-            // if this key is an invalid for a hotkey
+            // if this key is invalid for a hotkey
             if (key == Key.LWin || key == Key.RWin
                 || key == Key.CapsLock || key == Key.Escape
                 || key == Key.Back || key == Key.Delete
-                || key == Key.Space || key == Key.System)
+                || key == Key.Space || key == Key.System
+                || key == Key.Return || key == Key.Enter
+                || bHotkeyInputDisabled)    // or the hotkey textbox is not ready for input
             {
-                bHotkeyInProgress = false;
                 e.Handled = true;                       // the key has been processed
                 return;                                 // exit the function
             }
@@ -273,7 +286,7 @@ namespace hotkey_soundboard
             // if the hotkey isn't full of modifier keys (CTRL, ALT, SHIFT, TAB, etc.) yet, we can add another
             if (!HasMaxModifiers(tboxSender, e))
             {
-                if ((key == Key.LeftCtrl) || (key == Key.RightCtrl))        // if a CTRL key has been pressed
+                if (key == Key.LeftCtrl || key == Key.RightCtrl)            // if a CTRL key has been pressed
                 {
                     if (HasOneModifier(tboxSender, e))                      // if there's only one modifier in the hotkey
                     {
@@ -314,7 +327,7 @@ namespace hotkey_soundboard
 
                 if (key == Key.LeftAlt || key == Key.RightAlt)              // if an ALT key has been pressed
                 {
-                    if (HasOneModifier(tboxSender, e))                        // if there's only one modifier in the hotkey
+                    if (HasOneModifier(tboxSender, e))                      // if there's only one modifier in the hotkey
                     {
                         if (tboxSender.Text == "ALT + " && key != Key.System)       // and ALT was already pressed
                         {
@@ -350,7 +363,7 @@ namespace hotkey_soundboard
                     return;                                                 // exit the function
                 }
 
-                if ((key == Key.LeftShift) || (key == Key.RightShift))      // if a SHIFT key has been pressed
+                if (key == Key.LeftShift || key == Key.RightShift)          // if a SHIFT key has been pressed
                 {
                     if (HasOneModifier(tboxSender, e))                      // if there's only one modifier in the hotkey
                     {
@@ -495,7 +508,6 @@ namespace hotkey_soundboard
 
             // hotkey is complete
             bHotkeyInProgress = false;
-            bHotkeyIsComplete = true;
         }
 
         // stores and registers a completed hotkey
@@ -504,25 +516,25 @@ namespace hotkey_soundboard
             KeyModifier modifiers = (KeyModifier)Keyboard.Modifiers;
             TextBox tboxSender = (sender as TextBox);
             int Id = GetControlId(tboxSender);
+            int commandIndex = Id - 1;
             string temp = tboxSender.Text;
 
             for (int i = 0; i < commands.Count; i++)
             {
-                if (temp == commands[i].Hotkey && commands[Id - 1].Id != commands[i].Id)     // if this command already exists
-                {                                                                            // ... swap them
-                    int test = i + 1;
+                if (temp == commands[i].Hotkey && commands[commandIndex].Id != commands[i].Id)  // if this command already exists
+                {                                                                               // ... swap them
                     // store data in temporary variables
-                    string oldKeyStr = commands[Id - 1].Hotkey;
-                    string oldName = commands[Id - 1].Name;
-                    Key oldKey = globalHotkeys[Id - 1].Key;
-                    KeyModifier oldKeyModifiers = globalHotkeys[Id - 1].Key_Modifiers;
+                    string oldKeyStr = commands[commandIndex].Hotkey;
+                    string oldName = commands[commandIndex].Name;
+                    Key oldKey = globalHotkeys[commandIndex].Key;
+                    KeyModifier oldKeyModifiers = globalHotkeys[commandIndex].Key_Modifiers;
 
                     // swap the data from this command and the old command
-                    commands[Id - 1].Hotkey = commands[i].Hotkey;
-                    commands[Id - 1].Name = commands[i].Name;
-                    globalHotkeys[Id - 1].Key = e;
-                    globalHotkeys[Id - 1].Key_Modifiers = modifiers;
-                    globalHotkeys[Id - 1].Action = OnHotkeyPlaySound;
+                    commands[commandIndex].Hotkey = commands[i].Hotkey;
+                    commands[commandIndex].Name = commands[i].Name;
+                    globalHotkeys[commandIndex].Key = e;
+                    globalHotkeys[commandIndex].Key_Modifiers = modifiers;
+                    globalHotkeys[commandIndex].Action = OnHotkeyPlaySound;
 
                     commands[i].Hotkey = oldKeyStr;
                     commands[i].Name = oldName;
@@ -532,15 +544,15 @@ namespace hotkey_soundboard
 
                     // unregister the two old global hotkeys, then register with the newly stored data
                     globalHotkeys[i].Unregister();
-                    globalHotkeys[Id - 1].Unregister();
+                    globalHotkeys[commandIndex].Unregister();
                     globalHotkeys[i].Register(bIsInactive);
-                    globalHotkeys[Id - 1].Register(bIsInactive);
+                    globalHotkeys[commandIndex].Register(bIsInactive);
 
                     // save all changes to the database
                     DataAccess.SaveGlobalHotkey(globalHotkeys[i]);
                     DataAccess.SaveCommand(commands[i]);
-                    DataAccess.SaveGlobalHotkey(globalHotkeys[Id - 1]);
-                    DataAccess.SaveCommand(commands[Id - 1]);
+                    DataAccess.SaveGlobalHotkey(globalHotkeys[commandIndex]);
+                    DataAccess.SaveCommand(commands[commandIndex]);
 
                     // find the old command's hotkey textbox and display the new hotkey (i + 1 gives the Hotkey textbox's Id)
                     foreach (TextBox tBox in CommandGrid.Children.OfType<TextBox>().Where(tbox => tbox.Name == "Hotkey" + (i + 1).ToString()))
@@ -553,16 +565,16 @@ namespace hotkey_soundboard
             }
 
             // store data
-            globalHotkeys[Id - 1].Key = e;
-            globalHotkeys[Id - 1].Key_Modifiers = modifiers;
-            globalHotkeys[Id - 1].Action = OnHotkeyPlaySound;
-            commands[Id - 1].Hotkey = tboxSender.Text;
+            globalHotkeys[commandIndex].Key = e;
+            globalHotkeys[commandIndex].Key_Modifiers = modifiers;
+            globalHotkeys[commandIndex].Action = OnHotkeyPlaySound;
+            commands[commandIndex].Hotkey = tboxSender.Text;
 
-            globalHotkeys[Id - 1].Unregister();                     // unregister old hotkey
-            globalHotkeys[Id - 1].Register(bIsInactive);                       // register the newly stored hotkey
+            globalHotkeys[commandIndex].Unregister();                    // unregister old hotkey
+            globalHotkeys[commandIndex].Register(bIsInactive);           // register the newly stored hotkey
 
-            DataAccess.SaveGlobalHotkey(globalHotkeys[Id - 1]);     // save global hotkey to the database
-            DataAccess.SaveCommand(commands[Id - 1]);               // save command info to the database
+            DataAccess.SaveGlobalHotkey(globalHotkeys[commandIndex]);    // save global hotkey to the database
+            DataAccess.SaveCommand(commands[commandIndex]);               // save command info to the database
         }
 
         // returns true if the hotkey already has the maximum number of valid modifier keys
@@ -643,6 +655,10 @@ namespace hotkey_soundboard
             lblInfo.Content = "";
         }
 
+// ###############################
+// TEXTBLOCK METHODS
+// ###############################
+
         // defines behavior for when a file is dragged over a File textblock
         private void File_PreviewDragOver(object sender, DragEventArgs e)
         {
@@ -676,31 +692,33 @@ namespace hotkey_soundboard
             object filename = e.Data.GetData(DataFormats.FileDrop);                         // get the filename
             if (sender is TextBlock tblockSender)
             {
-                tblockSender.Text = string.Format("{0}", ((string[])filename)[0]);                // insert filename into textblock
+                tblockSender.Text = string.Format("{0}", ((string[])filename)[0]);          // insert filename into textblock
 
                 // get id of command
                 int Id = GetControlId(tblockSender);
-                commands[Id - 1].File_Path = tblockSender.Text;                                   // put filename into command list
+                int commandIndex = Id - 1;
+
+                commands[commandIndex].File_Path = tblockSender.Text;                             // put filename into command list
 
                 string shortFileName = Path.GetFileName(tblockSender.Text);                       // get shortened filename
-                if (shortFileName.Length > 24)                                              // if the shortened filename is too many characters
-                    commands[Id - 1].Name = shortFileName.Remove(24, (shortFileName.Length - 24));  // cut off the rest of the excess characters and store in command list
+                if (shortFileName.Length > 24)                                                    // if the shortened filename is too many characters
+                    commands[commandIndex].Name = shortFileName.Remove(24, (shortFileName.Length - 24));  // cut off the rest of the excess characters and store in command list
                 else 
-                    commands[Id - 1].Name = shortFileName;                                  // otherwise just store the name in command list
+                    commands[commandIndex].Name = shortFileName;                                  // otherwise just store the name in command list
 
                 // find the Name textbox with the corresponding id
                 foreach (TextBox txtboxControl in CommandGrid.Children.OfType<TextBox>().Where(tbox => tbox.Name == "Name" + Id.ToString()))
                 {
-                    txtboxControl.Text = commands[Id - 1].Name;                             // put the shortened filename into the Name textbox
+                    txtboxControl.Text = commands[commandIndex].Name;                             // put the shortened filename into the Name textbox
                 }
 
-                DataAccess.SaveCommand(commands[Id - 1]);                                   // save this command (filename and name)
+                DataAccess.SaveCommand(commands[commandIndex]);                                   // save this command (filename and name)
             }
         }
 
         // defines behavior when the left mouse button released on a File textblock 
         // opens file dialog box, copies filename to File textblock, shortened name to Name textbox, and saves command
-        private void File_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        private void File_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             TextBlock tblockSender = (sender as TextBlock);
 
@@ -718,21 +736,23 @@ namespace hotkey_soundboard
                 tblockSender.Text = filename;
 
                 int Id = GetControlId(tblockSender);
-                commands[Id - 1].File_Path = tblockSender.Text;                              // store filename in command list
+                int commandIndex = Id - 1;
+
+                commands[commandIndex].File_Path = tblockSender.Text;                        // store filename in command list
 
                 string shortFileName = dialog.SafeFileName;                                  // get shortened filename
 
                 if (shortFileName.Length > 24)                                               // if shortened filename is too long
-                    commands[Id - 1].Name = shortFileName.Remove(24);                       // cut off excess characters and store in command list
+                    commands[commandIndex].Name = shortFileName.Remove(24);                  // cut off excess characters and store in command list
                 else
-                    commands[Id - 1].Name = shortFileName;                                   // otherwise, store whole name in command list
+                    commands[commandIndex].Name = shortFileName;                             // otherwise, store whole name in command list
 
                 foreach (TextBox txtboxControl in CommandGrid.Children.OfType<TextBox>().Where(tbox => tbox.Name == "Name" + Id.ToString()))
                 {
-                    txtboxControl.Text = commands[Id - 1].Name;                              // put shortened name into corresponding Name textbox
+                    txtboxControl.Text = commands[commandIndex].Name;                        // put shortened name into corresponding Name textbox
                 }
 
-                DataAccess.SaveCommand(commands[Id - 1]);                                    // save command (filename and name)
+                DataAccess.SaveCommand(commands[commandIndex]);                              // save command (filename and name)
             }
         }
 
@@ -745,6 +765,10 @@ namespace hotkey_soundboard
             if (tblockSender.Text != "")
             tblockSender.ToolTip = tblockSender.Text;
         }
+
+/// ###############################
+/// BUTTON METHODS
+/// ###############################
 
         // defines behavior upon clicking a clear button 
         // clears Name textboxes and File textblocks corresponding to the row of the clicked Clear button, then saves the cleared command
@@ -846,8 +870,17 @@ namespace hotkey_soundboard
                 LoadGlobalHotkeys(profileIndex);                       // load the new global hotkeys into the globalHotkeys list
             }
 
+            if (profileIndex > listboxProfile.SelectedIndex)           // if the profile being deleted is below the currently active profile
+            {
+                profileIndex = profileIndex - 1;                       // adjust the profileIndex accordingly (reduce it by one)
+            }
+
             listboxProfile.Items.Remove(listboxProfile.SelectedItem);  // remove the listbox item associated with the deleted profile
         }
+
+/// ###############################
+/// LISTBOX METHODS
+/// ###############################
 
         // load an existing profile by double clicking on a listbox item
         private void list_PreviewMouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -882,6 +915,9 @@ namespace hotkey_soundboard
             }
         }
 
+/// ###############################
+/// CHECKBOX METHODS
+/// ###############################
 
         // defines behavior upon checking the "Deactivate Hotkeys" checkbox
         // deactivates all currently registered global hotkeys and prevents new hotkeys from being registered
@@ -910,6 +946,10 @@ namespace hotkey_soundboard
                 globalHotkeys[i].Register(bIsInactive);
             }
         }
+
+/// ###############################
+/// WINDOW METHODS
+/// ###############################
 
         // dispose of global hotkeys and close media player upon closing window
         private void Window_Closing(object sender, CancelEventArgs e)

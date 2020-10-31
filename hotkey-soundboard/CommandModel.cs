@@ -1,9 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿
 
 namespace hotkey_soundboard
 {
+    /// <summary>
+    /// Provides a model for command data.
+    /// 
+    /// These are string representations of commands.
+    /// </summary>
+
     public class CommandModel
     {
         public int Id { get; set; }

@@ -1,16 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Net.Mime;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 
 namespace hotkey_soundboard
 {
+    /// <summary>
+    /// Provides a model for managing hotkey data (key and key modifier data) that allows for
+    /// global registration of the hotkey with an action tied to it. When the hotkey is pressed
+    /// the assigned action will execute.
+    /// 
+    /// Dispose methods are included to unregister and dispose of unwanted global hotkeys.
+    /// </summary>
+
     public class GlobalHotkey : IDisposable
     {
         private static Dictionary<int, GlobalHotkey> _dictHotKeyToCalBackProc;

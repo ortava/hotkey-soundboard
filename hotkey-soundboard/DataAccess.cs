@@ -1,17 +1,27 @@
 ﻿using Dapper;
-using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Data;
 using System.Data.SQLite;
 using System.Linq;
-using System.Text;
 
 namespace hotkey_soundboard
 {
+    /// <summary>
+    /// Creates connections to the database and executes SQL statements to store and retrieve
+    /// data from a database.
+    /// 
+    /// This file works with the ProfileDB database. It contains data for profiles in the 
+    /// profile table, data for string representations of hotkey commands in the 
+    /// command table, and data for virtually storing hotkey commands in the 
+    /// global_hotkey table.
+    /// </summary>
+
     public class DataAccess
     {
-        /// CommandModel Data ///
+/// ###############################
+/// COMMAND DATA
+/// ###############################
 
         // returns a list of objects containing hotkey command data from the command table in ProfileDB
         public static List<CommandModel> LoadCommands(ProfileModel profile)
@@ -45,7 +55,9 @@ namespace hotkey_soundboard
             }
         }
 
-        /// GlobalHotkey Data ///
+/// ###############################
+/// GLOBALHOTKEY DATA
+/// ###############################
 
         // returns a list of objects containing global hotkey data from the global_hotkey table in ProfileDB
         public static List<GlobalHotkey> LoadGlobalHotkeys(ProfileModel profile)
@@ -66,7 +78,9 @@ namespace hotkey_soundboard
             }
         }
 
-        /// Profile Data ///
+/// ###############################
+/// PROFILE DATA
+/// ###############################
 
         // save all profile data from a singular profile to the related row in the command table in the database
         public static void SaveProfile(ProfileModel profile)
@@ -131,7 +145,9 @@ namespace hotkey_soundboard
             }
         }
 
-        //////////////////////////////////////////////////////////////////////////////////
+/// ###############################
+/// LOAD CONNECTION STRING TO DATABASE
+/// ###############################
 
         // returns the connection string required to access database
         private static string LoadConnectionString()
