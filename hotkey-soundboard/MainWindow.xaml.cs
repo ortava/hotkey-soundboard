@@ -135,6 +135,9 @@ namespace hotkey_soundboard
             {
                 if (txtFileControl.Name == ("File" + (i + 1).ToString()))                   // if this control's name matches "File1", "File2", ...
                 {
+                    if (string.IsNullOrEmpty(commands[i].File_Path))                        // if there is no file name
+                        txtFileControl.SetValue(TextBlock.TextProperty, "Drop a file here or click to browse."); // fill textblock with default text instructions
+                    else
                     txtFileControl.SetValue(TextBlock.TextProperty, commands[i].File_Path); // set the Text property of this textblock to matching value from the database
                     i++;
                 }
@@ -156,7 +159,8 @@ namespace hotkey_soundboard
 
             // play the sound file 
             player.Stop();         // stop any previous sounds still playing
-            if (!string.IsNullOrEmpty(commands[commandIndex].File_Path))
+            if (!string.IsNullOrEmpty(commands[commandIndex].File_Path)         // check if a file_path exists for this hotkey
+                && !commands[commandIndex].File_Path.Equals("Drop a file here or click to browse."))
             {
                 player.Open(new Uri(commands[commandIndex].File_Path));
                 player.Play();
@@ -787,7 +791,7 @@ namespace hotkey_soundboard
 
             foreach (TextBlock txtblockControl in CommandGrid.Children.OfType<TextBlock>().Where(tblock => tblock.Name == "File" + Id.ToString()))
             {
-                txtblockControl.Text = "";
+                txtblockControl.Text = "Drop a file here or click to browse.";
                 commands[controlIndex].File_Path = txtblockControl.Text;
             }
 
@@ -814,7 +818,7 @@ namespace hotkey_soundboard
             {
                 if (txtblockControl.Name == "File" + (i+1).ToString())
                 {
-                    txtblockControl.Text = "";
+                    txtblockControl.Text = "Drop a file here or click to browse.";
                     commands[i].File_Path = txtblockControl.Text;
                     i++;
                 }  
