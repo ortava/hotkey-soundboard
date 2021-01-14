@@ -1,5 +1,7 @@
 # Hotkey Soundboard
 
+### [Click to watch a demo video.](https://youtu.be/OXj9n1p-LVs)
+## [![Watch a demo video.](https://img.youtube.com/vi/OXj9n1p-LVs/maxresdefault.jpg)](https://youtu.be/OXj9n1p-LVs)
 ## [Download Hotkey Soundboard with Google Drive.](https://drive.google.com/drive/folders/16mEw-v5kDrADmK2NVHTNYyMQLwlPNJNw?usp=sharing)
 
 ### About
