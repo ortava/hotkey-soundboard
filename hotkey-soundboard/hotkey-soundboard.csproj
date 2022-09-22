@@ -6,7 +6,7 @@
     <RootNamespace>hotkey_soundboard</RootNamespace>
     <UseWPF>true</UseWPF>
     <PublishSingleFile>true</PublishSingleFile>
-    <PublishTrimmed>true</PublishTrimmed>
+    <PublishTrimmed>false</PublishTrimmed>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
 
